@@ -35,6 +35,12 @@ async function writeJson(file, obj) {
     });
 }
 
+function writeJsonSync(file, obj) {
+    let json = JSON.stringify(obj);
+    fs.writeFileSync(directory + `/${file}.json`, json, 'utf8');
+    console.log("JSON data is saved in", `${file}.json`);
+}
+
 async function readJson(file) {
     let data;
     await readFile(directory + `/${file}`, 'utf8').then((text) => {
@@ -52,5 +58,6 @@ module.exports = {
     latestBlockTime: latestBlockTIme,
     duration: duration,
     writeJson: writeJson,
+    writeJsonSync: writeJsonSync,
     readJson: readJson
 }
