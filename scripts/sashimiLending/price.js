@@ -55,20 +55,20 @@ module.exports = async function () {
     const reporter = web3.eth.accounts.privateKeyToAccount(info.keyMap.alice);
     sashimiOracle = await SashimiOracle.at("0xf3e79be9b4f9793bc6cc7ec72e9a9a772dda68c6");
     let chainlinkOracleView = await SashimiOracle.at("0x5BcF405BCaf0375Fbda318cEaC3F9fa9997677Dd");
-    let ethPriceInUSD = await sashimiOracle.getUnderlyingPrice(slETHAddress);
-    let prices = await helper.readJson("prices.json");// 从文件读取价格
+    let ethPriceInUSD = await sashimiOracle.getUnderlyingPrice(slETHAddress); //decimals of ethPriceInUSD is 18
+    let prices = await helper.readJson("prices.json");// get price from prices.json
     let post = [];
     for (const [symbol, token] of Object.entries(this.tokenMap)) {
       var uniswapPair = await IUniswapV2Pair.at(token.lpTokenAddress);
       var reserves = await uniswapPair.getReserves();
       let priceInETH = 0;
       if (!token.isReversed) {
-        priceInETH = web3.utils.toBN(10 ** token.decimals).mul(reserves.reserve1).div(reserves.reserve0);
+        priceInETH = web3.utils.toBN(10 ** token.decimals).mul(reserves.reserve1).div(reserves.reserve0); //decimals of priceInETH is 18
       }else{
-        priceInETH = web3.utils.toBN(10 ** token.decimals).mul(reserves.reserve0).div(reserves.reserve1);
+        priceInETH = web3.utils.toBN(10 ** token.decimals).mul(reserves.reserve0).div(reserves.reserve1); //decimals of priceInETH is 18
       }
-      var priceInUSD = (priceInETH.mul(ethPriceInUSD).div(web3.utils.toBN(10**15)).div(web3.utils.toBN(10**15))).toNumber();
-      if (prices[symbol] == undefined) {
+      var priceInUSD = (priceInETH.mul(ethPriceInUSD).div(web3.utils.toBN(10**15)).div(web3.utils.toBN(10**15))).toNumber(); //decimals of priceInUSD is 6
+      if (prices[symbol] == undefined) { // post price when symbol is not in prices.json
         prices[symbol] = priceInUSD;
         post.push(token);
       }
@@ -99,9 +99,9 @@ module.exports = async function () {
       //await postPrices(timestamp, [[["ELF",0.077972],["GOF",0.511617],["SASHIMI",0.0036]]], ['ELF',"GOF","SASHIMI"], reporter);
       //await postPrices(timestamp, [[["GOF",0.460455]]], ["GOF"], reporter);
       //await postPrices(timestamp, [[["GOF",0.511617]]], ["GOF"], reporter);
-      await postPrices(timestamp, priceArray, symobls, reporter);
+      await postPrices(timestamp, priceArray, symobls, reporter); //update oracle price 
       console.log(JSON.stringify(prices));
-      await helper.writeJsonSync("prices", prices); //save pirces
+      await helper.writeJsonSync("prices", prices); //save pirces to prices.json
       console.log("post");
     } 
   } catch (error) {
