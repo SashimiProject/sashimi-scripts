@@ -9,6 +9,7 @@ const SLEtherABI = require('./abis/slEther.json');
 const fetch = require('node-fetch');
 const { URL, URLSearchParams } = require('url');
 const HttpsProxyAgent = require('https-proxy-agent');
+const BigNubmer = require('bignumber.js');
 
 let web3;
 
@@ -72,7 +73,7 @@ slTokenMap = {
 let close_factor = 0.5;
 let liquidation_incentive = 1.08;
 
-async function liquidate(){
+async function main(){
     console.log("start");
     web3 = new Web3(config.networks.kovan.provider());
     web3.eth.defaultAccount=info.addresses.alice;
@@ -96,68 +97,67 @@ async function liquidate(){
             unhealthyAccount.debt = [];
             unhealthyAccount.collateral = [];
             unhealthyAccount.address = account.address;
-            unhealthyAccount.total_borrow_value_in_usd = parseFloat(account.totalBorrowValueInUSD);
-            unhealthyAccount.total_collateral_value_in_usd = parseFloat(account.totalCollateralValueInUSD);
+            unhealthyAccount.total_borrow_value_in_usd = new BigNubmer(account.totalBorrowValueInUSD);
             account.tokens.forEach(token => {
                 let slToken = {};
                 slToken.symbol = token.symbol;
                 slToken.underlying_decimals = token.market.underlyingDecimals;
-                slToken.underlying_price = parseFloat(token.market.underlyingPriceUSD);
+                slToken.underlying_price = new BigNubmer(token.market.underlyingPriceUSD);
                 slToken.address = token.address;
                 slToken.contract = slTokenMap[slToken.address].contract;
-                slToken.borrow_balance_underlying = parseFloat(token.storedBorrowBalance);
-                slToken.borrow_balance_underlying_in_usd = slToken.underlying_price * slToken.borrow_balance_underlying;
-                slToken.supply_balance_underlying = parseFloat(token.cTokenBalance) * parseFloat(token.market.exchangeRate);
-                console.log(slToken.supply_balance_underlying);
-                slToken.supply_balance_underlying_in_usd = slToken.underlying_price * slToken.supply_balance_underlying;
-                if (slToken.borrow_balance_underlying > 0) {
+                slToken.borrow_balance_underlying = new BigNubmer(token.storedBorrowBalance);
+                slToken.borrow_balance_underlying_in_usd = slToken.underlying_price.times(slToken.borrow_balance_underlying);
+                slToken.supply_balance_underlying = (new BigNubmer(token.cTokenBalance)).times(token.market.exchangeRate);
+                slToken.supply_balance_underlying_in_usd = slToken.underlying_price.times(slToken.supply_balance_underlying);
+                if (slToken.borrow_balance_underlying > 0 && slToken.symbol == 'slETH') {
                     unhealthyAccount.debt.push(slToken);
                 }
                 if (slToken.supply_balance_underlying > 0) {
                     unhealthyAccount.collateral.push(slToken);
                 }
             });
-            unhealthyAccount.debt.sort((a, b) => b.borrow_balance_underlying_in_usd - a.borrow_balance_underlying_in_usd);
-            unhealthyAccount.collateral.sort((a, b) => b.supply_balance_underlying_in_usd - a.supply_balance_underlying_in_usd);
-            console.log(unhealthyAccount);
+            unhealthyAccount.debt.sort((a, b) => b.borrow_balance_underlying_in_usd.comparedTo(a.borrow_balance_underlying_in_usd));
+            unhealthyAccount.collateral.sort((a, b) => b.supply_balance_underlying_in_usd.comparedTo(a.supply_balance_underlying_in_usd));
             unhealthyAccounts.push(unhealthyAccount);
         };
         let ethPrice;
         if(unhealthyAccounts.length > 0){
             ethPrice = await getETHPrice();
-        }        
-        unhealthyAccounts.sort((a, b) => b.total_borrow_value_in_usd - a.total_borrow_value_in_usd);
+            unhealthyAccounts.sort((a, b) => b.total_borrow_value_in_usd.comparedTo(a.total_borrow_value_in_usd));
+        }
         for (const unhealthyAccount of unhealthyAccounts) {
-            let liquidationAmount = unhealthyAccount.debt[0].borrow_balance_underlying * close_factor;
-            const expectedCollateral = unhealthyAccount.debt[0].borrow_balance_underlying_in_usd * close_factor * liquidation_incentive;
+            let liquidationAmount = unhealthyAccount.debt[0].borrow_balance_underlying.times(close_factor);
+            let expectedCollateral = unhealthyAccount.debt[0].borrow_balance_underlying_in_usd.times(close_factor).times(liquidation_incentive);
             const actualCollateral = unhealthyAccount.collateral[0].supply_balance_underlying_in_usd;
-            if (expectedCollateral > actualCollateral) {
-                liquidationAmount = actualCollateral / (liquidation_incentive * unhealthyAccount.debt[0].underlying_price);
+            if (expectedCollateral.gt(actualCollateral)) {
+                liquidationAmount = actualCollateral.div(unhealthyAccount.debt[0].underlying_price.times(liquidation_incentive));
+                console.log(liquidationAmount.toString());
+                expectedCollateral = actualCollateral;
             }
             let expectedGasAmount = 0;
             if (unhealthyAccount.debt[0].symbol === 'slETH') {
-                expectedGasAmount = await unhealthyAccount.debt[0].contract.methods.liquidateBorrow(unhealthyAccount.address, unhealthyAccount.collateral[0].address).estimateGas({from: info.addresses.alice ,gas: 1000000, value: (liquidationAmount * 10**unhealthyAccount.debt[0].underlying_decimals).toFixed(0)});
+                expectedGasAmount = await unhealthyAccount.debt[0].contract.methods.liquidateBorrow(unhealthyAccount.address, unhealthyAccount.collateral[0].address).estimateGas({from: info.addresses.alice ,gas: 1000000, value: (liquidationAmount.times(10**unhealthyAccount.debt[0].underlying_decimals)).toFixed(0)});
                 console.log(expectedGasAmount);
                 console.log('slETH');
             } else {
-                expectedGasAmount = await unhealthyAccount.debt[0].contract.methods.liquidateBorrow(unhealthyAccount.address, (liquidationAmount * 10**unhealthyAccount.debt[0].underlying_decimals).toFixed(0), unhealthyAccount.collateral[0].address).estimateGas({from: info.addresses.alice});
+                expectedGasAmount = await unhealthyAccount.debt[0].contract.methods.liquidateBorrow(unhealthyAccount.address, (liquidationAmount.times(10**unhealthyAccount.debt[0].underlying_decimals)).toFixed(0), unhealthyAccount.collateral[0].address).estimateGas({from: info.addresses.alice});
                 console.log(expectedGasAmount);
                 console.log(unhealthyAccount.debt[0].symbol);
             }
             const expectedGasFee = web3.utils.fromWei(gasPrice.mul(web3.utils.toBN(expectedGasAmount)).mul(ethPrice).div(web3.utils.toBN(10**18)));
             console.log(expectedGasFee);
-            const expectedRevenue = expectedCollateral - (liquidationAmount * unhealthyAccount.debt[0].underlying_price);
-            console.log(expectedRevenue);
-            const expectedProfit = expectedRevenue - expectedGasFee;
-            console.log(expectedProfit);
-            // if(expectedProfit <= 0) continue;
-            // if (unhealthyAccount.debt[0].symbol === 'slETH') {
-            //     expectedGasAmount = await unhealthyAccount.debt[0].contract.methods.liquidateBorrow(unhealthyAccount.address, unhealthyAccount.collateral[0].address).send({from: info.addresses.alice, gasPrice: gasPrice.toNumber(),gas: 1000000,value: (liquidationAmount * 10**unhealthyAccount.debt[0].underlying_decimals).toFixed(0)});
-            //     console.log('slETH');
-            // } else {
-            //     expectedGasAmount = await unhealthyAccount.debt[0].contract.methods.liquidateBorrow(unhealthyAccount.address, (liquidationAmount * 10**unhealthyAccount.debt[0].underlying_decimals).toFixed(0), unhealthyAccount.collateral[0].address).send({from: info.addresses.alice, gasPrice: gasPrice.toNumber(),gas: 1000000 });
-            //     console.log(unhealthyAccount.debt[0].symbol);
-            // }
+            const expectedRevenue = expectedCollateral.minus(liquidationAmount.times(unhealthyAccount.debt[0].underlying_price));
+            console.log(expectedRevenue.toString());
+            const expectedProfit = expectedRevenue.minus(expectedGasFee);
+            console.log(expectedProfit.toString());
+            // if(expectedProfit.lte(0)) continue;
+            if (unhealthyAccount.debt[0].symbol === 'slETH') {
+                expectedGasAmount = await unhealthyAccount.debt[0].contract.methods.liquidateBorrow(unhealthyAccount.address, unhealthyAccount.collateral[0].address).send({from: info.addresses.alice, gasPrice: gasPrice.toNumber(),gas: 1000000,value: (liquidationAmount.times(10**unhealthyAccount.debt[0].underlying_decimals)).toFixed(0)});
+                console.log('slETH');
+            } else {
+                expectedGasAmount = await unhealthyAccount.debt[0].contract.methods.liquidateBorrow(unhealthyAccount.address, (liquidationAmount.times(10**unhealthyAccount.debt[0].underlying_decimals)).toFixed(0), unhealthyAccount.collateral[0].address).send({from: info.addresses.alice, gasPrice: gasPrice.toNumber(),gas: 1000000 });
+                console.log(unhealthyAccount.debt[0].symbol);
+            }
         }
     }
     catch (e) {
@@ -166,7 +166,14 @@ async function liquidate(){
     }
     
     console.log('End.');
-    process.exit();
 }
 
-liquidate();
+
+(async () => {
+    try {
+        await main();
+        process.exit();
+    } catch (e) {
+        console.log(e);
+    }
+})();

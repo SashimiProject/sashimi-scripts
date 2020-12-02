@@ -10,6 +10,7 @@
     "readline-sync": "^1.4.10",
     "https-proxy-agent": "^5.0.0",
     "node-fetch": "^2.6.1",
+    "bignumber.js": "^9.0.0",
     "truffle": "^5.1.41",
     "truffle-flattener": "^1.4.4",
     "truffle-hdwallet-provider": "^1.0.17",
