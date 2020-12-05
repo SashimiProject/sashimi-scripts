@@ -10,6 +10,7 @@ const fetch = require('node-fetch');
 const { URL, URLSearchParams } = require('url');
 const HttpsProxyAgent = require('https-proxy-agent');
 const BigNumber = require('bignumber.js');
+const schedule = require('node-schedule');
 
 tokenMap = {  
   'ETH':{
@@ -105,23 +106,23 @@ tokenMap = {
       weight: 2
     }
   },
-  'HT':{   //binance JEX
-    symbol: "HT",
-    decimals: 18,
-    huobi:{
-      pair: "htusdt",
-      weight: 1000
-    },
-    binance: { //没有交易对
-      pair: "",
-      weight: 0
-    },
-    uniswap:{ //基本没有流动性
-      lpTokenAddress: "", //
-      isReversed: false,
-      weight: 0
-    }
-  },
+  // 'HT':{   //binance JEX
+  //   symbol: "HT",
+  //   decimals: 18,
+  //   huobi:{
+  //     pair: "htusdt",
+  //     weight: 1000
+  //   },
+  //   binance: { //没有交易对
+  //     pair: "",
+  //     weight: 0
+  //   },
+  //   uniswap:{ //基本没有流动性
+  //     lpTokenAddress: "", //
+  //     isReversed: false,
+  //     weight: 0
+  //   }
+  // },
   'SASHIMI': {  //TODO  AEX 24小时成交量 $243,071，Sashimiswap $8,231   1:1
     symbol: "SASHIMI",
     decimals: 18,
@@ -168,10 +169,19 @@ async function postPrices(timestamp, prices2dArr, symbols, signer = reporter) {
       };
     }, { messages, signatures });
   }, { messages: [], signatures: [] });
-  //TODO 用BN解决精度问题
-  //TODO 从各个地方获取价格，用权重获取均价
-  var gasPrice = await getGasPrice();
-  await sashimiOracle.methods.postPrices(messages, signatures, symbols).send({from:info.addresses.alice,gasPrice: gasPrice.toNumber()});
+  sashimiOracle = new web3.eth.Contract(SashimiOracle.abi, "0xBEB5b92daEb6ebA25aB6B6f04421F19D94A8Eef5");
+  var gasPrice = await getGasPrice();  
+  // var gasAmount = await sashimiOracle.methods.postPrices(messages, signatures, symbols).estimateGas({from:info.addresses.alice,gasPrice: gasPrice.toNumber()});
+  // console.log(gasAmount.toString());
+  await sashimiOracle.methods.postPrices(messages, signatures, symbols).send({from:info.addresses.alice,gasPrice: 1000000000, gas: 1000000})
+  .on('receipt', function(receipt){
+    // receipt example
+    console.log(receipt.cumulativeGasUsed);
+    const transactionFee = receipt.cumulativeGasUsed * parseInt(gasPrice.toString()) / 10**18;
+    console.log(transactionFee);
+    
+  });
+  //await sashimiOracle.methods.postPrices(messages, signatures, symbols).send({from:info.addresses.alice,gasPrice: 1000000000});
 }
 
 async function getGasPrice(){
@@ -310,25 +320,25 @@ async function getPrice(symbol){
   if(tokenMap[symbol].huobi.nextPair != undefined){
     huobiPrice = huobiPrice.times(await getPriceInHuobi(tokenMap[symbol].huobi.nextPair));
   }
-  console.log(huobiPrice.toString());
+  //console.log(huobiPrice.toString());
   var binancePrice = await getPriceInBinance(tokenMap[symbol].binance.pair);
   if(tokenMap[symbol].binance.nextPair != undefined){
     binancePrice = binancePrice.times(await getPriceInBinance(tokenMap[symbol].binance.nextPair));
   }
-  console.log(binancePrice.toString());
+  //console.log(binancePrice.toString());
   var uniswapPrice = await getPriceInUniswap(symbol,ethPriceInUniswap);
-  console.log((new BigNumber(uniswapPrice.toString()).div(10**6)).toString());
+  //console.log((new BigNumber(uniswapPrice.toString()).div(10**6)).toString());
   var price = huobiPrice.times(tokenMap[symbol].huobi.weight).plus(binancePrice.times(tokenMap[symbol].binance.weight)).plus(new BigNumber(uniswapPrice.toString()).times(tokenMap[symbol].uniswap.weight).div(10**6)).div(1000);
-  console.log(price.toString());
+  //console.log(price.toString());
   return price.decimalPlaces(6,BigNumber.ROUND_DOWN);
 }
 
 async function getSashimiPrice(){
   var aexPrice = await getSashimiPriceInAEX();
-  console.log(aexPrice.toString());
+  //console.log(aexPrice.toString());
   await getPriceInSashimiswap("ETH",ethPriceInSashimiswap);
   var sashimiPrice = await getPriceInSashimiswap("SASHIMI",ethPriceInSashimiswap);
-  console.log(new BigNumber(sashimiPrice.toString()).div(10**6).toString());
+  //console.log(new BigNumber(sashimiPrice.toString()).div(10**6).toString());
   return aexPrice.plus(new BigNumber(sashimiPrice.toString()).div(10**6)).div(2);
 }
 
@@ -346,7 +356,7 @@ async function main() {
     let post = [];
     for (const [symbol, token] of Object.entries(this.tokenMap)) {
       //if(symbol != 'ELF' && symbol != 'ETH') continue;
-      console.log(symbol);
+      //console.log(symbol);
       let price = 0;
       if(symbol == "SASHIMI"){
         price = await getSashimiPrice();
@@ -386,7 +396,7 @@ async function main() {
       //await postPrices(timestamp, [[["ELF",0.077972],["GOF",0.511617],["SASHIMI",0.0036]]], ['ELF',"GOF","SASHIMI"], reporter);
       //await postPrices(timestamp, [[["GOF",0.460455]]], ["GOF"], reporter);
       //await postPrices(timestamp, [[["GOF",0.511617]]], ["GOF"], reporter);
-      //await postPrices(timestamp, priceArray, symobls, reporter); //update oracle price 
+      await postPrices(timestamp, priceArray, symobls, reporter); //update oracle price 
       console.log(JSON.stringify(prices));
       await helper.writeJsonSync("prices", prices); //save pirces to prices.json
     } 
@@ -396,11 +406,22 @@ async function main() {
   console.log('End.');
 }
 
-(async () => {
-  try {
+
+var j = schedule.scheduleJob('*/2 * * * *', function(fireDate){
+  console.log('This job was supposed to run at ' + fireDate + ', but actually ran at ' + new Date());
+  (async () => {  
+    try {
       await main();
-      process.exit();
-  } catch (e) {
-    console.log(e);
-  }
-})();
+    } catch (e) {
+      console.log(e);
+    }
+  })();
+});
+// (async () => {  
+//   try {
+//     await main();
+//   } catch (e) {
+//     console.log(e);
+//   }
+//   process.exit();  
+// })();
