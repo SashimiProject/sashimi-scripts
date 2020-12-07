@@ -6,6 +6,7 @@
   "dependencies": {
     "@openzeppelin/contracts": "^3.1.0",
     "@openzeppelin/test-helpers": "^0.5.6",
+    "@truffle/hdwallet-provider": "^1.2.0",
     "bignumber.js": "^9.0.0",
     "canonical-weth": "^1.4.0",
     "https-proxy-agent": "^5.0.0",
@@ -14,7 +15,6 @@
     "readline-sync": "^1.4.10",
     "truffle": "^5.1.41",
     "truffle-flattener": "^1.4.4",
-    "truffle-hdwallet-provider": "^1.0.17",
     "truffle-plugin-verify": "^0.4.0"
   }
 }
