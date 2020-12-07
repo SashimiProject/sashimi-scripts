@@ -1,4 +1,4 @@
-const HDWalletProvider = require("truffle-hdwallet-provider");
+const HDWalletProvider = require("@truffle/hdwallet-provider");
 const keys = require("../../keys");
 const providers = require('../../providers');
 const info = require('../../info.json');
@@ -16,7 +16,12 @@ module.exports = {
 
         kovan: {
             provider: function () {
-                return new HDWalletProvider(keys.privateKeys, providers.kovan, 0, keys.privateKeys.length)
+                return new HDWalletProvider({
+                    privateKeys: keys.privateKeys,
+                    providerOrUrl: providers.kovan,
+                    numberOfAddresses: keys.privateKeys.length,
+                    pollingInterval: 60000
+                  })
             },
             network_id: 42,
             gas: 10000000,
@@ -26,7 +31,12 @@ module.exports = {
 
         mainnet: {
             provider: function () {
-                return new HDWalletProvider(keys.privateKeys, providers.mainnet, 0,keys.privateKeys.length)
+                return new HDWalletProvider({
+                    privateKeys: keys.privateKeys,
+                    providerOrUrl: providers.mainnet,
+                    numberOfAddresses: keys.privateKeys.length,
+                    pollingInterval: 60000
+                  })
             },
             network_id: 1,
             gas: 1000000,
