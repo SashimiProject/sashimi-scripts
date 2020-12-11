@@ -1,6 +1,6 @@
 const Web3 = require('web3');
 const info = require('../../info.json');
-const config = require("./sashimi-lending-config");
+const lendingConfig = require("./sashimi-lending-config");
 const SashimiOracle = require('../../build/contracts/SashimiOracle.json');
 const IUniswapV2Pair = require('../../build/contracts/IUniswapV2Pair.json');
 const helper = require('../helper');
@@ -12,139 +12,9 @@ const HttpsProxyAgent = require('https-proxy-agent');
 const BigNumber = require('bignumber.js');
 const schedule = require('node-schedule');
 
-tokenMap = {  
-  'ETH':{
-    symbol: "ETH",    
-    decimals: 18,
-    huobi:{
-      pair: "ethusdt",
-      weight: 435
-    },
-    binance:{
-      pair: "ETHUSDT",
-      weight: 528 
-    },
-    uniswap:{
-      lpTokenAddress: "0x0d4a11d5eeaac28ec3f61d100daf4d40471f1852", //ETH-USDT lp token address(mainnet)
-      isReversed: false,
-      weight: 37
-    },
-    sashimiswap:{
-      lpTokenAddress: "0x490Ccb3C835597Ff31E525262235487f9426312b", //ETH-USDT lp token address(mainnet)
-      isReversed: false,
-      weight: 0
-    }
-  },
-  'WBTC':{
-    symbol: "WBTC",
-    decimals: 8,
-    huobi:{
-      pair: "wbtcbtc", //TODO需要转成USDT
-      weight: 6,
-      nextPair:"btcusdt"
-    },
-    binance: {
-      pair: "WBTCBTC", //TODO需要转成USDT
-      weight: 127,
-      nextPair: "BTCUSDT"
-    },
-    uniswap:{
-      lpTokenAddress: "0xbb2b8038a1640196fbe3e38816f3e67cba72d940", //WBTC-ETH lp token address(mainnet)
-      isReversed: false,
-      weight: 867
-    }
-  },
-  'DAI':{
-    symbol: "DAI",
-    decimals: 18,
-    huobi:{
-      pair: "daiusdt",
-      weight: 12
-    },
-    binance: {
-      pair: "DAIUSDT",
-      weight: 123
-    },
-    uniswap:{
-      lpTokenAddress: "0xa478c2975ab1ea89e8196811f51a7b7ade33eb11", //DAI-ETH lp token address(mainnet)
-      isReversed: false,
-      weight: 865
-    }
-  },
-  'YFI':{
-    symbol: "YFI",
-    decimals: 18,
-    huobi:{
-      pair: "yfiusdt",
-      weight: 175
-    },
-    binance: {
-      pair: "YFIUSDT",
-      weight: 766
-    },
-    uniswap:{
-      lpTokenAddress: "0x2fDbAdf3C4D5A8666Bc06645B8358ab803996E28", //YFI-ETH lp token address(mainnet)
-      isReversed: false,
-      weight: 59
-    }
-  },
-  'ELF':{
-    symbol: "ELF",
-    decimals: 18,
-    huobi:{
-      pair: "elfusdt", 
-      weight: 508
-    },
-    binance: {  
-      pair: "ELFBTC",
-      weight:  490,
-      nextPair: "BTCUSDT"
-    },
-    uniswap:{
-      lpTokenAddress: "0xA6be7F7C6c454B364cDA446ea39Be9e5E4369DE8",
-      isReversed: false,
-      weight: 2
-    }
-  },
-  // 'HT':{   //binance JEX
-  //   symbol: "HT",
-  //   decimals: 18,
-  //   huobi:{
-  //     pair: "htusdt",
-  //     weight: 1000
-  //   },
-  //   binance: { //没有交易对
-  //     pair: "",
-  //     weight: 0
-  //   },
-  //   uniswap:{ //基本没有流动性
-  //     lpTokenAddress: "", //
-  //     isReversed: false,
-  //     weight: 0
-  //   }
-  // },
-  'SASHIMI': {  //TODO  AEX 24小时成交量 $243,071，Sashimiswap $8,231   1:1
-    symbol: "SASHIMI",
-    decimals: 18,
-    huobi:{ //没有交易对
-      pair: "",
-      weight: 0
-    },
-    binance: { //没有交易对
-      pair: "",
-      weight: 0
-    },
-    uniswap:{ //基本没有流动性
-      lpTokenAddress: "", //
-      isReversed: false,
-      weight: 0
-    },
-    sashimiswap:{
-      lpTokenAddress: "0x3fA4B0b3053413684d0B658689Ede7907bB4D69D", //
-      isReversed: true
-    }
-  },
-};
+let config = lendingConfig.networks.mainnet;
+let tokenMap = config.tokenMap;
+
 
 let sashimiOracle;
 
@@ -169,18 +39,11 @@ async function postPrices(timestamp, prices2dArr, symbols, signer = reporter) {
       };
     }, { messages, signatures });
   }, { messages: [], signatures: [] });
-  sashimiOracle = new web3.eth.Contract(SashimiOracle.abi, "0xBEB5b92daEb6ebA25aB6B6f04421F19D94A8Eef5");
+  sashimiOracle = new web3.eth.Contract(SashimiOracle.abi, config.contracts.oracle);
   var gasPrice = await getGasPrice();  
-  // var gasAmount = await sashimiOracle.methods.postPrices(messages, signatures, symbols).estimateGas({from:info.addresses.alice,gasPrice: gasPrice.toNumber()});
-  // console.log(gasAmount.toString());
-  await sashimiOracle.methods.postPrices(messages, signatures, symbols).send({from:info.addresses.alice,gasPrice: 1000000000, gas: 1000000})
-  .on('receipt', function(receipt){
-    // receipt example
-    console.log(receipt.cumulativeGasUsed);
-    const transactionFee = receipt.cumulativeGasUsed * parseInt(gasPrice.toString()) / 10**18;
-    console.log(transactionFee);
-    
-  });
+  var gasAmount = await sashimiOracle.methods.postPrices(messages, signatures, symbols).estimateGas({from:info.addresses.main, gasPrice: gasPrice.toNumber()});
+  console.log(gasAmount.toString());
+  //await sashimiOracle.methods.postPrices(messages, signatures, symbols).send({from:info.addresses.main, gasPrice: gasPrice.toNumber(), gas: 1000000});
   //await sashimiOracle.methods.postPrices(messages, signatures, symbols).send({from:info.addresses.alice,gasPrice: 1000000000});
 }
 
@@ -330,7 +193,7 @@ async function getPrice(symbol){
   //console.log((new BigNumber(uniswapPrice.toString()).div(10**6)).toString());
   var price = huobiPrice.times(tokenMap[symbol].huobi.weight).plus(binancePrice.times(tokenMap[symbol].binance.weight)).plus(new BigNumber(uniswapPrice.toString()).times(tokenMap[symbol].uniswap.weight).div(10**6)).div(1000);
   //console.log(price.toString());
-  return price.decimalPlaces(6,BigNumber.ROUND_DOWN);
+  return price.decimalPlaces(tokenMap[symbol].price_decimals,BigNumber.ROUND_DOWN);
 }
 
 async function getSashimiPrice(){
@@ -339,7 +202,7 @@ async function getSashimiPrice(){
   await getPriceInSashimiswap("ETH",ethPriceInSashimiswap);
   var sashimiPrice = await getPriceInSashimiswap("SASHIMI",ethPriceInSashimiswap);
   //console.log(new BigNumber(sashimiPrice.toString()).div(10**6).toString());
-  return aexPrice.plus(new BigNumber(sashimiPrice.toString()).div(10**6)).div(2);
+  return aexPrice.plus(new BigNumber(sashimiPrice.toString()).div(10**6)).div(2).decimalPlaces(tokenMap["SASHIMI"].price_decimals,BigNumber.ROUND_DOWN);
 }
 
 let web3;
@@ -349,14 +212,14 @@ let ethPriceInSashimiswap = 0;
 async function main() { 
   console.log("start");
   try {
-    web3 = new Web3(config.networks.mainnet.provider());
-    web3.eth.defaultAccount=info.addresses.alice;
-    
+    if(web3 == undefined){
+      web3 = new Web3(config.provider());
+      web3.eth.defaultAccount=info.addresses.alice;
+      console.log("Init web3")
+    }
     let prices = await helper.readJson("prices.json");// get price from prices.json
     let post = [];
-    for (const [symbol, token] of Object.entries(this.tokenMap)) {
-      //if(symbol != 'ELF' && symbol != 'ETH') continue;
-      //console.log(symbol);
+    for (const [symbol, token] of Object.entries(tokenMap)) {
       let price = 0;
       if(symbol == "SASHIMI"){
         price = await getSashimiPrice();
@@ -391,11 +254,8 @@ async function main() {
       }
       console.log(JSON.stringify(symobls));
       console.log(JSON.stringify(priceArray));
-      const reporter = web3.eth.accounts.privateKeyToAccount(info.keyMap.alice);
+      const reporter = web3.eth.accounts.privateKeyToAccount(info.keyMap.reporter);
       const timestamp = time() - 5;      
-      //await postPrices(timestamp, [[["ELF",0.077972],["GOF",0.511617],["SASHIMI",0.0036]]], ['ELF',"GOF","SASHIMI"], reporter);
-      //await postPrices(timestamp, [[["GOF",0.460455]]], ["GOF"], reporter);
-      //await postPrices(timestamp, [[["GOF",0.511617]]], ["GOF"], reporter);
       await postPrices(timestamp, priceArray, symobls, reporter); //update oracle price 
       console.log(JSON.stringify(prices));
       await helper.writeJsonSync("prices", prices); //save pirces to prices.json
