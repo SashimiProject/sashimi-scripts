@@ -1,7 +1,7 @@
 const Web3 = require('web3');
 const info = require('../../info.json');
 const lendingConfig = require("./sashimi-lending-config");
-const SashimiOracle = require('../../build/contracts/SashimiOracle.json');
+const SashimiOracle = require('../../build/contracts/PriceOracle.json');
 const IUniswapV2Pair = require('../../build/contracts/IUniswapV2Pair.json');
 const helper = require('../helper');
 const { encode, sign } = require('./reporter');
@@ -14,9 +14,21 @@ const schedule = require('node-schedule');
 
 let config = lendingConfig.networks.mainnet;
 let tokenMap = config.tokenMap;
-
-
 let sashimiOracle;
+
+async function fetch_get(url){
+  return await fetch(url,{
+    agent: new HttpsProxyAgent("http://127.0.0.1:1087") //proxy only use in local.Online can remove it.
+  });
+}
+
+async function feth_post(url){
+  return await fetch(url,{
+    method: 'post',
+    headers: { 'Content-Type': 'application/json' },
+    agent: new HttpsProxyAgent("http://127.0.0.1:1087") //proxy only use in local.Online can remove it.
+  });
+}
 
 async function postPrices(timestamp, prices2dArr, symbols, signer = reporter) {
   let {
@@ -41,9 +53,11 @@ async function postPrices(timestamp, prices2dArr, symbols, signer = reporter) {
   }, { messages: [], signatures: [] });
   sashimiOracle = new web3.eth.Contract(SashimiOracle.abi, config.contracts.oracle);
   var gasPrice = await getGasPrice();  
-  var gasAmount = await sashimiOracle.methods.postPrices(messages, signatures, symbols).estimateGas({from:info.addresses.main, gasPrice: gasPrice.toNumber()});
+  var gasAmount = await sashimiOracle.methods.postPrices(messages, signatures, symbols).estimateGas({from:info.addresses.reporter, gasPrice: gasPrice.toNumber()});
   console.log(gasAmount.toString());
-  //await sashimiOracle.methods.postPrices(messages, signatures, symbols).send({from:info.addresses.main, gasPrice: gasPrice.toNumber(), gas: 1000000});
+  const transactionFee = parseInt(gasAmount.toString()) * parseInt(gasPrice.toString()) / 10**18;
+  console.log(transactionFee);
+  //await sashimiOracle.methods.postPrices(messages, signatures, symbols).send({from:info.addresses.reporter, gasPrice: gasPrice.toNumber(), gas: 1000000});
   //await sashimiOracle.methods.postPrices(messages, signatures, symbols).send({from:info.addresses.alice,gasPrice: 1000000000});
 }
 
@@ -56,9 +70,7 @@ async function getGasPrice(){
         "apikey": info.api_etherscan
       };
       url.search = new URLSearchParams(params).toString();
-      let response = await fetch(url,{
-          agent: new HttpsProxyAgent("http://127.0.0.1:1087") //proxy only use in local.Online can remove it.
-      });
+      let response = await fetch_get(url);
       let gasOracle = await response.json();
       if(gasOracle.status != "1" || gasOracle.message !="OK"){
           //TODO Add retry logic
@@ -71,10 +83,6 @@ async function getGasPrice(){
   }
 }
 
-
-/*ETH，WBTC，DAI，USDC，USDT，YFI，ELF，SASHIMI，HT
- * Huobi:每个IP在1秒内限制10次
- */
 async function getPriceInHuobi(pair){
   if(pair == undefined || pair == "") return new BigNumber(0);
   let url = new URL('https://api.huobi.pro/market/detail/merged');
@@ -82,9 +90,7 @@ async function getPriceInHuobi(pair){
     "symbol": pair
   };
   url.search = new URLSearchParams(params).toString();
-  let response = await fetch(url,{
-      agent: new HttpsProxyAgent("http://127.0.0.1:1087") //proxy only use in local.Online can remove it.
-  });
+  let response = await fetch_get(url);
   let result = await response.json();
   if(result.status != 'ok'){
     //TODO retry logic
@@ -100,9 +106,7 @@ async function getPriceInBinance(pair){
     "symbol": pair
   };
   url.search = new URLSearchParams(params).toString();
-  let response = await fetch(url,{
-    agent: new HttpsProxyAgent("http://127.0.0.1:1087") //proxy only use in local.Online can remove it.
-  });
+  let response = await fetch_get(url);
   let result = await response.json();
   if(result.price == undefined)
   {
@@ -119,11 +123,7 @@ async function getSashimiPriceInAEX(){
     "coinname": "sashimi"
   };
   url.search = new URLSearchParams(params).toString();
-  let response = await fetch(url,{
-    method: 'post',
-    headers: { 'Content-Type': 'application/json' },
-    agent: new HttpsProxyAgent("http://127.0.0.1:1087") //proxy only use in local.Online can remove it.
-  });
+  let response = await feth_post(url);
   let result = await response.json();
   if(result.code != 20000)
   {
@@ -234,10 +234,7 @@ async function main() {
         var originPrice = new BigNumber(prices[symbol]);
         var upperBound = originPrice.times(1.001);
         var lowerBound = originPrice.times(0.999);
-        if(price.gt(upperBound) || price.lt(lowerBound)){ //post price when price change is larger than 0.1%
-          // console.log(upperBound.toString());
-          // console.log(lowerBound.toString());
-          // console.log(price.toString());
+        if(price.gt(upperBound) || price.lt(lowerBound)){ //post price when price change is larger than offset
           prices[symbol] = price;
           post.push(token);
         }
